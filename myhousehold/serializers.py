@@ -89,3 +89,35 @@ class DiscardSerializer(serializers.Serializer):
 class AdjustSerializer(serializers.Serializer):
     actual_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0)
     comment = serializers.CharField(required=False, allow_blank=True)
+
+
+
+
+class OperationHistorySerializer(serializers.ModelSerializer):
+    storage_location = serializers.CharField(source='batch.storage_location', read_only=True, default=None)
+
+    class Meta:
+        model = Operation
+        fields = ('id', 'operation_type', 'quantity', 'comment', 'batch_id', 'storage_location', 'created_at')
+
+
+class ForecastSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    current_stock = serializers.FloatField()
+    average_daily_consumption = serializers.FloatField()
+    estimated_days_remaining = serializers.IntegerField(allow_null=True)
+    estimated_depletion_date = serializers.DateField(allow_null=True)
+    confidence = serializers.CharField()
+    based_on_days = serializers.IntegerField()
+
+
+class RecommendationSerializer(serializers.Serializer):
+    type = serializers.CharField() # use_soon, buy, waste_risk, check_stock
+    priority = serializers.CharField() # high, medium, low
+    product_id = serializers.IntegerField()
+    batch_id = serializers.IntegerField(required=False, allow_null=True)
+    message = serializers.CharField()
+    expires_at = serializers.DateTimeField(required=False, allow_null=True)
+    recommended_quantity = serializers.FloatField(required=False, allow_null=True)
+    expected_unused_quantity = serializers.FloatField(required=False, allow_null=True)
+

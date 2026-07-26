@@ -112,7 +112,39 @@ class ProductViewSet(viewsets.ModelViewSet):
             comment=serializer.validated_data.get('comment', '')
         )
         return Response({"current_stock": float(new_stock)}, status=status.HTTP_200_OK)
+    
+    # myproject/myhousehold/views.py
+# (добавьте эти методы внутрь класса ProductViewSet)
 
+    # GET /products/{product_id}/operations
+    @action(detail=True, methods=['get'], url_path='operations')
+    def operations(self, request, pk=None):
+        product = self.get_object()
+        queryset = Operation.objects.filter(product=product).order_by('created_at') # Хронологический порядок
+        
+        # Фильтры из ТЗ (5.8)
+        op_type = request.query_params.get('operation_type')
+        batch_id = request.query_params.get('batch_id')
+        storage_location = request.query_params.get('storage_location')
+        
+        if op_type:
+            queryset = queryset.filter(operation_type=op_type)
+        if batch_id:
+            queryset = queryset.filter(batch_id=batch_id)
+        if storage_location:
+            queryset = queryset.filter(batch__storage_location=storage_location)
+            
+        serializer = OperationHistorySerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    # GET /products/{product_id}/forecast
+    @action(detail=True, methods=['get'], url_path='forecast')
+    def forecast(self, request, pk=None):
+        # Чтение кастомного периода из query_params (по умолчанию 14 дней)
+        days = int(request.query_params.get('days', 14))
+        forecast_data = StockService.get_forecast(request.user, pk, days_to_analyze=days)
+        serializer = ForecastSerializer(forecast_data)
+        return Response(serializer.data)
 
 class BatchViewSet(viewsets.GenericViewSet):
     permission_classes = (permissions.IsAuthenticated,)
@@ -129,3 +161,13 @@ class BatchViewSet(viewsets.GenericViewSet):
             reason=serializer.validated_data['reason']
         )
         return Response({"status": "success"}, status=status.HTTP_200_OK)
+
+
+# GET /recommendations
+class RecommendationView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        data = StockService.generate_recommendations(request.user)
+        serializer = RecommendationSerializer(data, many=True)
+        return Response(serializer.data)
