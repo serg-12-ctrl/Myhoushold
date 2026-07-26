@@ -171,3 +171,71 @@ class RecommendationView(APIView):
         data = StockService.generate_recommendations(request.user)
         serializer = RecommendationSerializer(data, many=True)
         return Response(serializer.data)
+
+
+from .models import ShoppingItem, Notification
+from .serializers import (
+    ShoppingItemSerializer, ShoppingItemCreateSerializer, 
+    ShoppingCompletePurchaseSerializer, NotificationSerializer
+)
+
+class ShoppingListViewSet(viewsets.ViewSet):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    # GET /shopping-list
+    def list(self, request):
+        queryset = ShoppingItem.objects.filter(user=request.user, is_completed=False)
+        serializer = ShoppingItemSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    # POST /shopping-list/items (Ручное добавление)
+    @action(detail=False, methods=['post'], url_path='items')
+    def add_item(self, request):
+        serializer = ShoppingItemCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        item = StockService.add_manual_shopping_item(
+            user=request.user, product_id=serializer.validated_data['product_id'],
+            quantity=serializer.validated_data['quantity'], priority=serializer.validated_data['priority']
+        )
+        return Response(ShoppingItemSerializer(item).data, status=status.HTTP_201_CREATED)
+
+    # DELETE /shopping-list/items/{item_id}
+    @action(detail=True, methods=['delete'], url_path='items')
+    def remove_item(self, request, pk=None):
+        item = ShoppingItem.objects.get(id=pk, user=request.user)
+        item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # POST /shopping-list/items/{item_id}/purchase
+    @action(detail=True, methods=['post'], url_path='items/purchase')
+    def purchase_item(self, request, pk=None):
+        serializer = ShoppingCompletePurchaseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        StockService.complete_purchase(user=request.user, item_id=pk, batch_data=serializer.validated_data if serializer.validated_data else None)
+        return Response({"status": "completed"}, status=status.HTTP_200_OK)
+
+
+class NotificationViewSet(viewsets.ViewSet):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    # GET /notifications
+    def list(self, request):
+        queryset = Notification.objects.filter(user=request.user)
+        serializer = NotificationSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    # POST /notifications/{notification_id}/read
+    @action(detail=True, methods=['post'], url_path='read')
+    def read(self, request, pk=None):
+        notification = Notification.objects.get(id=pk, user=request.user)
+        notification.read_at = timezone.now()
+        notification.save()
+        return Response({"status": "read"})
+
+    # POST /notifications/read-all
+    @action(detail=False, methods=['post'], url_path='read-all')
+    def read_all(self, request):
+        Notification.objects.filter(user=request.user, read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"status": "all_marked_as_read"})

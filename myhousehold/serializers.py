@@ -121,3 +121,28 @@ class RecommendationSerializer(serializers.Serializer):
     recommended_quantity = serializers.FloatField(required=False, allow_null=True)
     expected_unused_quantity = serializers.FloatField(required=False, allow_null=True)
 
+
+
+class ShoppingItemSerializer(models.ModelSerializer):
+    class Meta:
+        model = ShoppingItem
+        fields = ('id', 'product_id', 'recommended_quantity', 'reason', 'priority', 'added_automatically', 'created_at')
+
+class ShoppingItemCreateSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.01)
+    priority = serializers.ChoiceField(choices=['high', 'medium', 'low'], default='medium')
+
+class ShoppingCompletePurchaseSerializer(serializers.Serializer):
+    # Опциональный блок для одновременного создания партии (9.4)
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    purchased_at = serializers.DateTimeField(required=False)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True)
+    storage_location = serializers.CharField(required=False)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+
+
+class NotificationSerializer(models.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ('id', 'notification_type', 'product_id', 'batch_id', 'message', 'created_at', 'read_at')

@@ -8,21 +8,10 @@ from .models import Batch, Operation, Product
 
 @shared_task
 def check_expired_batches():
-    """Ежедневная задача: проверка сроков годности и генерация предупреждений"""
-    now = timezone.now()
-    warning_period = now + timedelta(days=3) # Предупреждать за 3 дня
-    
-    # Ищем активные партии, у которых истекает срок годности
-    expiring_batches = Batch.objects.filter(
-        quantity_remaining__gt=0,
-        expires_at__lte=warning_period,
-        expires_at__gt=now
-    )
-    
-    for batch in expiring_batches:
-        # Здесь в реальном проекте отправляется Email, Push или Telegram уведомление пользователю.
-        # Для тестового задания достаточно сделать запись в лог или системную таблицу Уведомлений.
-        print(f"ВНИМАНИЕ: У товара '{batch.product.name}' (партия {batch.id}) скоро истекает срок годности: {batch.expires_at}")
+    """Ежедневный запуск аналитики, идемпотентного пересчета прогнозов и генерации списков покупок"""
+    from .services import StockService
+    StockService.run_daily_maintenance()
+    return "Daily maintenance successfully completed."
 
 @shared_task
 def calculate_product_forecast(product_id):

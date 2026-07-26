@@ -4,7 +4,7 @@ from decimal import Decimal  # <-- 1. Важный импорт для точн�
 from django.db import transaction, models
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
-from .models import Product, Batch, Operation
+from .models import Product, Batch, Operation, ShoppingItem, Notification
 
 class StockService:
     
@@ -326,3 +326,101 @@ class StockService:
                 })
 
         return recommendations
+    @staticmethod
+    @transaction.atomic
+    def add_manual_shopping_item(user, product_id, quantity, priority='medium'):
+        """Реализация 9.2: Ручное добавление в список покупок"""
+        product = Product.objects.get(id=product_id, user=user)
+        return ShoppingItem.objects.create(
+            user=user, product=product, recommended_quantity=Decimal(str(quantity)),
+            reason="manual", priority=priority, added_automatically=False
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def complete_purchase(user, item_id, batch_data=None):
+        """Реализация 9.4: Завершение покупки с опциональным созданием партии"""
+        item = ShoppingItem.objects.select_for_update().get(id=item_id, user=user)
+        
+        if batch_data:
+            # Создаем новую партию товара по результатам покупки
+            StockService.add_batch(
+                user=user, product_id=item.product.id,
+                quantity=batch_data.get('quantity'),
+                purchased_at=batch_data.get('purchased_at'),
+                expires_at=batch_data.get('expires_at'),
+                storage_location=batch_data.get('storage_location'),
+                price=batch_data.get('price')
+            )
+            
+        # Отмечаем элемент выполненным (или удаляем)
+        item.is_completed = True
+        item.save()
+        return item
+
+    @staticmethod
+    @transaction.atomic
+    def run_daily_maintenance():
+        """Реализация 10: Ежедневная фоновая задача (Идемпотентная)"""
+        now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Обходим всех активных пользователей системы
+        for user in User.objects.all():
+            products = Product.objects.filter(user=user)
+            
+            for product in products:
+                batches = Batch.objects.filter(product=product, quantity_remaining__gt=0)
+                current_stock = float(batches.aggregate(total=Sum('quantity_remaining'))['total'] or 0)
+                forecast = StockService.get_forecast(user, product.id)
+                daily_rate = forecast["average_daily_consumption"]
+
+                # 1. Проверка просрочки и скорого истечения (Порог из ТЗ: 3 дня)
+                for batch in batches:
+                    if batch.expires_at:
+                        days_left = (batch.expires_at - now).days
+                        
+                        if batch.expires_at < now:
+                            # Товар просрочен. Защита от дублей: проверяем, создавали ли уже ТАКОЕ уведомление СЕГОДНЯ
+                            if not Notification.objects.filter(user=user, batch=batch, notification_type='expired', created_at__gte=today_start).exists():
+                                Notification.objects.create(
+                                    user=user, product=product, batch=batch, notification_type='expired',
+                                    message=f"Товар {product.name} (партия {batch.id}) просрочен!"
+                                )
+                        elif 0 <= days_left <= 3:
+                            # Истекает скоро
+                            if not Notification.objects.filter(user=user, batch=batch, notification_type='expiring_soon', created_at__gte=today_start).exists():
+                                Notification.objects.create(
+                                    user=user, product=product, batch=batch, notification_type='expiring_soon',
+                                    message=f"Срок годности {product.name} (партия {batch.id}) истекает через {days_left} дн."
+                                )
+
+                # 2. Низкий остаток -> Авто-обновление Списка покупок и Уведомление
+                if current_stock == 0 or current_stock < float(product.minimum_stock):
+                    # Отправляем уведомление
+                    if not Notification.objects.filter(user=user, product=product, notification_type='low_stock', created_at__gte=today_start).exists():
+                        Notification.objects.create(
+                            user=user, product=product, notification_type='low_stock',
+                            message=f"Запасы товара {product.name} на исходе или закончились."
+                        )
+                    # Идемпотентно добавляем в список покупок: если активный элемент уже есть — не дублируем
+                    if not ShoppingItem.objects.filter(user=user, product=product, is_completed=False).exists():
+                        rec_qty = float(product.minimum_stock) - current_stock if current_stock < float(product.minimum_stock) else float(product.minimum_stock or 1)
+                        ShoppingItem.objects.create(
+                            user=user, product=product, recommended_quantity=Decimal(str(rec_qty)),
+                            reason="low_stock", priority="high", added_automatically=True
+                        )
+
+                # 3. Риск потери (Выбрасывания)
+                if daily_rate > 0:
+                    for batch in batches.filter(expires_at__isnull=False, expires_at__gt=now):
+                        days_until_expiration = (batch.expires_at - now).days
+                        expected_consumption = daily_rate * days_until_expiration
+                        rem = float(batch.quantity_remaining)
+                        
+                        if rem > expected_consumption:
+                            if not Notification.objects.filter(user=user, batch=batch, notification_type='waste_risk', created_at__gte=today_start).exists():
+                                Notification.objects.create(
+                                    user=user, product=product, batch=batch, notification_type='waste_risk',
+                                    message=f"Высокий риск выбросить часть товара {product.name} до конца срока годности!"
+                                )

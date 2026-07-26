@@ -96,3 +96,38 @@ class Operation(models.Model):
 
     def __str__(self):
         return f"{self.operation_type} - {self.product.name} ({self.quantity})"
+
+
+
+
+
+
+class ShoppingItem(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shopping_list')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='shopping_items')
+    recommended_quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    reason = models.CharField(max_length=255) # "low_stock", "forecast", "manual"
+    priority = models.CharField(max_length=20, default='medium') # "high", "medium", "low"
+    added_automatically = models.BooleanField(default=False)
+    is_completed = models.BooleanField(default=False) # Флаг для отметки выполнения покупки
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Элемент списка покупок"
+        verbose_name_plural = "Список покупок"
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True)
+    batch = models.ForeignKey(Batch, on_delete=models.SET_NULL, null=True, blank=True)
+    notification_type = models.CharField(max_length=50) # 'expiring_soon', 'expired', 'low_stock', etc.
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Уведомление"
+        verbose_name_plural = "Уведомления"
+        ordering = ['-created_at']
+
