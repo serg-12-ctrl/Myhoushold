@@ -4,7 +4,7 @@ from django.urls import path, include
 from rest_framework.routers import SimpleRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import RegisterView, MeView, ProductViewSet, BatchViewSet, RecommendationView
-from .views import ShoppingListViewSet, NotificationViewSet
+from .views import ShoppingListViewSet, NotificationViewSet, AnalyticsView
 
 # Регистрируем наши ViewSets для продуктов и партий товаров
 router = SimpleRouter(trailing_slash=False) # Отключаем обязательный слэш в конце под требования ТЗ
@@ -22,6 +22,7 @@ urlpatterns = [
     path('auth/refresh', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('recommendations', RecommendationView.as_view(), name='recommendations'),
+    path('analytics', AnalyticsView.as_view(), name='analytics'),
     
     # Автоматически подключаем эндпоинты /products и /batches
     path('', include(router.urls)),

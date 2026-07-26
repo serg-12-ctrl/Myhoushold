@@ -146,3 +146,10 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    # Добавляем глобальный перехватчик ошибок:
+    'EXCEPTION_HANDLER': 'myhousehold.exceptions.global_exception_handler',
+}

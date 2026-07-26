@@ -146,3 +146,14 @@ class NotificationSerializer(models.ModelSerializer):
     class Meta:
         model = Notification
         fields = ('id', 'notification_type', 'product_id', 'batch_id', 'message', 'created_at', 'read_at')
+
+
+
+class AnalyticsSerializer(serializers.Serializer):
+    period = serializers.DictField()
+    total_spent = serializers.FloatField()
+    discarded_value = serializers.FloatField()
+    waste_percent = serializers.FloatField()
+    most_consumed_products = serializers.ListField()
+    most_discarded_products = serializers.ListField()
+    category_expenses = serializers.DictField()

@@ -239,3 +239,76 @@ class NotificationViewSet(viewsets.ViewSet):
     def read_all(self, request):
         Notification.objects.filter(user=request.user, read_at__isnull=True).update(read_at=timezone.now())
         return Response({"status": "all_marked_as_read"})
+
+
+
+from django.db.models import Sum, Count, Avg, F
+from django.utils.dateparse import parse_date
+
+class AnalyticsView(APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        user = request.user
+        
+        # Получаем и валидируем параметры дат [12, 15]
+        date_from_str = request.query_params.get('date_from')
+        date_to_str = request.query_params.get('date_to')
+        category_filter = request.query_params.get('category')
+        product_filter = request.query_params.get('product_id')
+
+        date_from = parse_date(date_from_str) if date_from_str else timezone.now().date() - timedelta(days=30)
+        date_to = parse_date(date_to_str) if date_to_str else timezone.now().date()
+
+        # Базовая фильтрация операций за период для текущего юзера
+        base_ops = Operation.objects.filter(user=user, created_at__date__range=[date_from, date_to])
+        if product_filter:
+            base_ops = base_ops.filter(product_id=product_filter)
+        if category_filter:
+            base_ops = base_ops.filter(product__category=category_filter)
+
+        # 1. Сумма покупок (purchase) [12]
+        # Стоимость = количество * цену за единицу (цена хранится в Batch)
+        purchase_ops = base_ops.filter(operation_type=Operation.OperationType.PURCHASE)
+        total_spent = purchase_ops.aggregate(
+            total=Sum(F('quantity') * F('batch__price'))
+        )['total'] or 0
+
+        # 2. Стоимость выброшенных товаров (discard) [12]
+        discard_ops = base_ops.filter(operation_type=Operation.OperationType.DISCARD)
+        discarded_value = discard_ops.aggregate(
+            total=Sum(F('quantity') * F('batch__price'))
+        )['total'] or 0
+
+        waste_percent = (float(discarded_value) / float(total_spent) * 100) if total_spent > 0 else 0
+
+        # 3. Наиболее часто покупаемые товары [12]
+        most_consumed = base_ops.filter(operation_type=Operation.OperationType.CONSUME)\
+            .values('product_id', name=F('product__name'))\
+            .annotate(quantity=Sum('quantity'))\
+            .order_by('-quantity')[:5]
+
+        # 4. Наиболее часто выбрасываемые товары [12]
+        most_discarded = discard_ops.values('product_id', name=F('product__name'))\
+            .annotate(quantity=Sum('quantity'))\
+            .order_by('-quantity')[:5]
+
+        # 5. Распределение расходов по категориям [12]
+        category_expenses = {}
+        category_data = purchase_ops.values(cat=F('product__category'))\
+            .annotate(total=Sum(F('quantity') * F('batch__price')))
+        for item in category_data:
+            cat_name = item['cat'] if item['cat'] else "Без категории"
+            category_expenses[cat_name] = float(item['total'] or 0)
+
+        response_data = {
+            "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+            "total_spent": float(total_spent),
+            "discarded_value": float(discarded_value),
+            "waste_percent": round(waste_percent, 2),
+            "most_consumed_products": list(most_consumed),
+            "most_discarded_products": list(most_discarded),
+            "category_expenses": category_expenses
+        }
+
+        return Response(response_data)
