@@ -1,0 +1,23 @@
+# Виртуальное окружение
+myenv/
+venv/
+env/
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Локальная база данных (содержит ваши пароли и тестовые данные)
+*.sqlite3
+
+# Конфигурации редакторов кода
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

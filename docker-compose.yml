@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # 1. База данных PostgreSQL
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=myhousehold_db
+      - POSTGRES_USER=db_user
+      - POSTGRES_PASSWORD=db_password
+    ports:
+      - "5432:5432"
+
+  # 2. Брокер сообщений Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # 3. Основное веб-приложение Django API
+  web:
+    build: .
+    command: >
+      sh -c "python manage.py makemigrations &&
+             python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_DB=myhousehold_db
+      - POSTGRES_USER=db_user
+      - POSTGRES_PASSWORD=db_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  # 4. Воркер Celery для выполнения фоновых задач
+  celery:
+    build: .
+    command: celery -A myproject worker --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_DB=myhousehold_db
+      - POSTGRES_USER=db_user
+      - POSTGRES_PASSWORD=db_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - db
+
+  # 5. Планировщик задач Celery Beat (для запуска ежедневных проверок)
+  celery-beat:
+    build: .
+    command: celery -A myproject beat --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_DB=myhousehold_db
+      - POSTGRES_USER=db_user
+      - POSTGRES_PASSWORD=db_password
+      - DB_HOST=db
+      - DB_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - db
+
+volumes:
+  postgres_data:
